@@ -1,12 +1,11 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Optional
+from typing import List
 import yfinance as yf
 from datetime import datetime, timedelta
 
 app = FastAPI()
 
-# Allow all origins for now – you can restrict to Vercel domain later
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,36 +18,36 @@ app.add_middleware(
 def home():
     return {"status": "Elytrix API running."}
 
-
 @app.get("/live_price")
-def get_live_price(symbol: str = Query(...), market: str = Query("stock")):
+def get_price(symbol: str = Query(...), market: str = Query("stock")):
     try:
-        if market.lower() == "crypto":
-            yf_symbol = symbol.upper() + "-USD"
+        if market == "crypto":
+            full_symbol = f"{symbol.upper()}-USD"
+        elif market == "forex":
+            full_symbol = f"{symbol.upper()}=X"
         else:
-            yf_symbol = symbol.upper()
+            full_symbol = symbol.upper()
 
-        ticker = yf.Ticker(yf_symbol)
-
+        ticker = yf.Ticker(full_symbol)
         hist = ticker.history(period="1d", interval="5m")
+
         if hist.empty:
-            return {"error": f"No data found for {symbol} from Yahoo Finance."}
+            return {"error": f"No price data found for {symbol} ({full_symbol})"}
 
-        current_price = round(hist["Close"].iloc[-1], 2)
-
+        current_price = hist["Close"].iloc[-1]
         chart_data = [
             {
-                "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "price": round(price, 2)
+                "timestamp": ts.isoformat(),
+                "price": float(price)
             }
-            for dt, price in zip(hist.index, hist["Close"])
+            for ts, price in zip(hist.index, hist["Close"])
         ]
 
         return {
             "symbol": symbol.upper(),
-            "price": current_price,
+            "price": round(float(current_price), 2),
             "chart": chart_data
         }
 
     except Exception as e:
-        return {"error": f"Failed to fetch data for {symbol}: {str(e)}"}
+        return {"error": str(e)}
