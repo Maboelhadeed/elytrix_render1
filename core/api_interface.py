@@ -35,3 +35,29 @@ def run_strategy(strategy: str = Query(...), mode: str = Query("backtest")):
         "mode": mode,
         "result": f"Simulated execution of {strategy} in {mode} mode"
     }
+import requests
+from fastapi import FastAPI, Query
+
+ALPACA_API_KEY = "AKK343CVU61TVJJB6CBP"
+ALPACA_SECRET_KEY = "JbuxU7Xb2I5doAd58oetqkJyVBxDu2BYa8bHkRKF"
+
+HEADERS = {
+    "APCA-API-KEY-ID": ALPACA_API_KEY,
+    "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY
+}
+
+@app.get("/live_price")
+def get_live_price(symbol: str = Query(..., description="e.g. AAPL or EURUSD")):
+    url = f"https://data.alpaca.markets/v2/stocks/{symbol}/quotes/latest"
+    response = requests.get(url, headers=HEADERS)
+
+    if response.status_code != 200:
+        return {"error": f"Failed to fetch price for {symbol}", "details": response.json()}
+
+    data = response.json()
+    quote = data.get("quote", {})
+    return {
+        "symbol": symbol.upper(),
+        "price": quote.get("ap", "N/A"),
+        "timestamp": quote.get("t", "N/A")
+    }
