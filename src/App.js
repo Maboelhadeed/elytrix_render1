@@ -14,6 +14,8 @@ export default function App() {
   const [range, setRange] = useState("1d");
   const [showSMA, setShowSMA] = useState(false);
   const [showEMA, setShowEMA] = useState(false);
+  const [showRSI, setShowRSI] = useState(false);
+  const [showBB, setShowBB] = useState(false);
   const chartRef = useRef();
 
   const intervalOptions = ["1m", "5m", "15m", "1h", "4h", "1d"];
@@ -63,28 +65,55 @@ export default function App() {
   };
 
   const calculateSMA = (data, period = 10) => {
-    return data
-      .map((c, i, arr) => {
-        if (i < period) return null;
-        const sum = arr.slice(i - period, i).reduce((a, b) => a + b.close, 0);
-        return { time: c.time, value: +(sum / period).toFixed(2) };
-      })
-      .filter(Boolean);
+    return data.map((c, i, arr) => {
+      if (i < period) return null;
+      const sum = arr.slice(i - period, i).reduce((a, b) => a + b.close, 0);
+      return { time: c.time, value: +(sum / period).toFixed(2) };
+    }).filter(Boolean);
   };
 
   const calculateEMA = (data, period = 10) => {
-    const k = 2 / (period + 1);
+    let k = 2 / (period + 1);
     let emaArray = [];
     data.forEach((c, i) => {
-      if (i === 0) {
-        emaArray.push({ time: c.time, value: c.close });
-      } else {
+      if (i === 0) emaArray.push({ time: c.time, value: c.close });
+      else {
         const prev = emaArray[emaArray.length - 1].value;
         const value = +(c.close * k + prev * (1 - k)).toFixed(2);
         emaArray.push({ time: c.time, value });
       }
     });
     return emaArray.slice(period);
+  };
+
+  const calculateRSI = (data, period = 14) => {
+    let rsiData = [];
+    for (let i = period; i < data.length; i++) {
+      let gains = 0, losses = 0;
+      for (let j = i - period + 1; j <= i; j++) {
+        const diff = data[j].close - data[j - 1].close;
+        if (diff >= 0) gains += diff;
+        else losses -= diff;
+      }
+      const rs = gains / (losses || 1);
+      const rsi = 100 - 100 / (1 + rs);
+      rsiData.push({ time: data[i].time, value: +rsi.toFixed(2) });
+    }
+    return rsiData;
+  };
+
+  const calculateBB = (data, period = 20) => {
+    let upper = [], lower = [];
+    for (let i = period - 1; i < data.length; i++) {
+      const slice = data.slice(i - period + 1, i + 1);
+      const mean = slice.reduce((sum, p) => sum + p.close, 0) / period;
+      const std = Math.sqrt(
+        slice.reduce((sum, p) => sum + Math.pow(p.close - mean, 2), 0) / period
+      );
+      upper.push({ time: data[i].time, value: +(mean + 2 * std).toFixed(2) });
+      lower.push({ time: data[i].time, value: +(mean - 2 * std).toFixed(2) });
+    }
+    return { upper, lower };
   };
 
   useEffect(() => {
@@ -103,15 +132,29 @@ export default function App() {
     candleSeries.setData(chartData);
 
     if (showSMA) {
+      const sma = calculateSMA(chartData);
       const smaSeries = chart.addLineSeries({ color: "#FFA500", lineWidth: 2 });
-      smaSeries.setData(calculateSMA(chartData));
+      smaSeries.setData(sma);
     }
 
     if (showEMA) {
+      const ema = calculateEMA(chartData);
       const emaSeries = chart.addLineSeries({ color: "#00BFFF", lineWidth: 2 });
-      emaSeries.setData(calculateEMA(chartData));
+      emaSeries.setData(ema);
     }
-  }, [chartData, showSMA, showEMA]);
+
+    if (showBB) {
+      const { upper, lower } = calculateBB(chartData);
+      chart.addLineSeries({ color: "#888", lineWidth: 1 }).setData(upper);
+      chart.addLineSeries({ color: "#888", lineWidth: 1 }).setData(lower);
+    }
+
+    if (showRSI) {
+      const rsi = calculateRSI(chartData);
+      const rsiSeries = chart.addLineSeries({ color: "#ADFF2F", lineWidth: 2, priceLineVisible: false });
+      rsiSeries.setData(rsi);
+    }
+  }, [chartData, showSMA, showEMA, showRSI, showBB]);
 
   const handleLoad = () => {
     setSymbol(inputSymbol.toUpperCase());
@@ -137,17 +180,20 @@ export default function App() {
 
       <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
         <select value={range} onChange={(e) => setRange(e.target.value)}>
-          {rangeOptions.map((r) => (
+          {["1d", "5d", "1mo", "3mo", "6mo", "1y"].map((r) => (
             <option key={r} value={r}>{r}</option>
           ))}
         </select>
         <select value={interval} onChange={(e) => setInterval(e.target.value)}>
-          {intervalOptions.map((i) => (
+          {["1m", "5m", "15m", "1h", "4h", "1d"].map((i) => (
             <option key={i} value={i}>{i}</option>
           ))}
         </select>
+
         <label><input type="checkbox" checked={showSMA} onChange={() => setShowSMA(!showSMA)} /> SMA</label>
         <label><input type="checkbox" checked={showEMA} onChange={() => setShowEMA(!showEMA)} /> EMA</label>
+        <label><input type="checkbox" checked={showRSI} onChange={() => setShowRSI(!showRSI)} /> RSI</label>
+        <label><input type="checkbox" checked={showBB} onChange={() => setShowBB(!showBB)} /> Bollinger Bands</label>
       </div>
 
       {price && <h3>{symbol} = ${price.toFixed(2)}</h3>}
