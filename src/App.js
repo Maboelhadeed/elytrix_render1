@@ -4,24 +4,6 @@ import { createChart } from "lightweight-charts";
 
 const BASE_URL = "https://elytrix-render1.onrender.com";
 
-const intervalOptions = [
-  { label: "1 Min", value: "1m" },
-  { label: "5 Min", value: "5m" },
-  { label: "15 Min", value: "15m" },
-  { label: "1 Hour", value: "1h" },
-  { label: "4 Hours", value: "4h" },
-  { label: "1 Day", value: "1d" },
-];
-
-const rangeOptions = [
-  { label: "1 Day", value: "1d" },
-  { label: "5 Days", value: "5d" },
-  { label: "1 Month", value: "1mo" },
-  { label: "3 Months", value: "3mo" },
-  { label: "6 Months", value: "6mo" },
-  { label: "1 Year", value: "1y" },
-];
-
 export default function App() {
   const [inputSymbol, setInputSymbol] = useState("AAPL");
   const [symbol, setSymbol] = useState("AAPL");
@@ -30,25 +12,28 @@ export default function App() {
   const [chartData, setChartData] = useState([]);
   const [interval, setInterval] = useState("5m");
   const [range, setRange] = useState("1d");
+  const [showSMA, setShowSMA] = useState(false);
+  const [showEMA, setShowEMA] = useState(false);
   const chartRef = useRef();
 
-  // real-time price refresh
+  const intervalOptions = ["1m", "5m", "15m", "1h", "4h", "1d"];
+  const rangeOptions = ["1d", "5d", "1mo", "3mo", "6mo", "1y"];
+
   useEffect(() => {
     fetchChart();
-    const priceTimer = setInterval(fetchPriceOnly, 5000); // refresh every 5s
+    const priceTimer = setInterval(fetchPriceOnly, 5000);
     return () => clearInterval(priceTimer);
   }, [symbol, market]);
 
-  // update chart on interval/range change
   useEffect(() => {
     fetchChart();
   }, [interval, range]);
 
   const fetchPriceOnly = async () => {
     try {
-      const res = await axios.get(
-        `${BASE_URL}/live_price?symbol=${symbol}&market=${market}&interval=${interval}&range=${range}`
-      );
+      const res = await axios.get(`${BASE_URL}/live_price`, {
+        params: { symbol, market, interval, range },
+      });
       if (res.data.price) setPrice(res.data.price);
     } catch (err) {
       console.error("Price fetch failed:", err);
@@ -57,9 +42,9 @@ export default function App() {
 
   const fetchChart = async () => {
     try {
-      const res = await axios.get(
-        `${BASE_URL}/live_price?symbol=${symbol}&market=${market}&interval=${interval}&range=${range}`
-      );
+      const res = await axios.get(`${BASE_URL}/live_price`, {
+        params: { symbol, market, interval, range },
+      });
       setPrice(res.data.price);
       setChartData(
         res.data.chart.map((c) => ({
@@ -77,6 +62,31 @@ export default function App() {
     }
   };
 
+  const calculateSMA = (data, period = 10) => {
+    return data
+      .map((c, i, arr) => {
+        if (i < period) return null;
+        const sum = arr.slice(i - period, i).reduce((a, b) => a + b.close, 0);
+        return { time: c.time, value: +(sum / period).toFixed(2) };
+      })
+      .filter(Boolean);
+  };
+
+  const calculateEMA = (data, period = 10) => {
+    const k = 2 / (period + 1);
+    let emaArray = [];
+    data.forEach((c, i) => {
+      if (i === 0) {
+        emaArray.push({ time: c.time, value: c.close });
+      } else {
+        const prev = emaArray[emaArray.length - 1].value;
+        const value = +(c.close * k + prev * (1 - k)).toFixed(2);
+        emaArray.push({ time: c.time, value });
+      }
+    });
+    return emaArray.slice(period);
+  };
+
   useEffect(() => {
     if (!chartRef.current || chartData.length === 0) return;
     chartRef.current.innerHTML = "";
@@ -88,9 +98,20 @@ export default function App() {
       priceScale: { borderColor: "#666" },
       timeScale: { borderColor: "#666" },
     });
-    const series = chart.addCandlestickSeries();
-    series.setData(chartData);
-  }, [chartData]);
+
+    const candleSeries = chart.addCandlestickSeries();
+    candleSeries.setData(chartData);
+
+    if (showSMA) {
+      const smaSeries = chart.addLineSeries({ color: "#FFA500", lineWidth: 2 });
+      smaSeries.setData(calculateSMA(chartData));
+    }
+
+    if (showEMA) {
+      const emaSeries = chart.addLineSeries({ color: "#00BFFF", lineWidth: 2 });
+      emaSeries.setData(calculateEMA(chartData));
+    }
+  }, [chartData, showSMA, showEMA]);
 
   const handleLoad = () => {
     setSymbol(inputSymbol.toUpperCase());
@@ -100,7 +121,7 @@ export default function App() {
     <div style={{ padding: "20px", backgroundColor: "#111", color: "#fff", minHeight: "100vh", fontFamily: "Arial" }}>
       <h1 style={{ color: "#66f" }}>Elytrix Market Viewer</h1>
 
-      <div style={{ marginBottom: "15px" }}>
+      <div style={{ marginBottom: "10px" }}>
         <input
           value={inputSymbol}
           onChange={(e) => setInputSymbol(e.target.value.toUpperCase())}
@@ -116,15 +137,17 @@ export default function App() {
 
       <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
         <select value={range} onChange={(e) => setRange(e.target.value)}>
-          {rangeOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          {rangeOptions.map((r) => (
+            <option key={r} value={r}>{r}</option>
           ))}
         </select>
         <select value={interval} onChange={(e) => setInterval(e.target.value)}>
-          {intervalOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          {intervalOptions.map((i) => (
+            <option key={i} value={i}>{i}</option>
           ))}
         </select>
+        <label><input type="checkbox" checked={showSMA} onChange={() => setShowSMA(!showSMA)} /> SMA</label>
+        <label><input type="checkbox" checked={showEMA} onChange={() => setShowEMA(!showEMA)} /> EMA</label>
       </div>
 
       {price && <h3>{symbol} = ${price.toFixed(2)}</h3>}
