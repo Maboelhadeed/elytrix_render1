@@ -22,13 +22,9 @@ export default function App() {
 
   const fetchChart = async () => {
     try {
-      const safeInterval = typeof interval === "string" ? interval : String(interval);
-      const safeRange = typeof range === "string" ? range : String(range);
-
       const res = await axios.get(
-        `${BASE_URL}/live_price?symbol=${symbol}&market=${market}&range=${safeRange}&interval=${safeInterval}`
+        `${BASE_URL}/live_price?symbol=${symbol}&market=${market}&range=${range}&interval=${interval}`
       );
-
       setPrice(res.data.price);
 
       const candles = res.data.chart.map((c) => ({
@@ -52,7 +48,7 @@ export default function App() {
 
   useEffect(() => {
     fetchChart();
-    const intervalId = setInterval(fetchChart, 10000); // refresh every 10s
+    const intervalId = setInterval(fetchChart, 5000); // ⏱ Refresh every 5 seconds
     return () => clearInterval(intervalId);
   }, [symbol, market, range, interval]);
 
@@ -71,10 +67,16 @@ export default function App() {
         timeVisible: true,
         tickMarkFormatter: (time, type, locale) => {
           const date = new Date(time * 1000);
-          if (["1m", "5m", "15m"].includes(interval)) {
-            return date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+          if (interval === "1m" || interval === "5m" || interval === "15m") {
+            return date.toLocaleTimeString(locale, {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
           }
-          return date.toLocaleDateString(locale, { day: "2-digit", month: "short" });
+          return date.toLocaleDateString(locale, {
+            day: "2-digit",
+            month: "short",
+          });
         },
       },
     });
@@ -82,6 +84,7 @@ export default function App() {
     candleSeries.current = chartInstance.current.addCandlestickSeries();
     candleSeries.current.setData(chartData);
 
+    // SMA
     if (showSMA) {
       const sma = chartData.map((d, i, arr) => {
         const start = Math.max(0, i - 9);
@@ -96,6 +99,7 @@ export default function App() {
       smaSeries.current.setData(sma);
     }
 
+    // EMA
     if (showEMA) {
       const ema = [];
       const k = 2 / (10 + 1);
@@ -111,7 +115,6 @@ export default function App() {
       });
       emaSeries.current.setData(ema);
     }
-
   }, [chartData, showSMA, showEMA, interval]);
 
   return (
@@ -157,11 +160,7 @@ export default function App() {
         </label>
       </div>
 
-      {price && (
-        <h3>
-          {symbol} = ${price.toFixed(2)}
-        </h3>
-      )}
+      {price && <h3>{symbol} = ${price.toFixed(2)}</h3>}
       <div ref={chartRef} />
     </div>
   );
