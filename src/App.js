@@ -20,6 +20,17 @@ export default function App() {
   const smaSeries = useRef();
   const emaSeries = useRef();
 
+  const allowedIntervals = {
+    "1d": ["1m", "5m", "15m"],
+    "5d": ["1m", "5m", "15m"],
+    "1mo": ["5m", "15m", "1d"],
+    "3mo": ["15m", "1d"],
+    "6mo": ["1d"],
+    "1y": ["1d"],
+    "5y": ["1wk"],
+    "max": ["1wk"],
+  };
+
   const fetchChart = async () => {
     try {
       const res = await axios.get(
@@ -43,12 +54,19 @@ export default function App() {
   };
 
   const handleLoad = () => {
+    const validIntervals = allowedIntervals[range];
+    if (!validIntervals.includes(interval)) {
+      alert(
+        `"${interval}" is not valid for "${range}" range. Auto-switching to ${validIntervals[0]}.`
+      );
+      setIntervalValue(validIntervals[0]);
+    }
     setSymbol(symbolInput.toUpperCase());
   };
 
   useEffect(() => {
     fetchChart();
-    const intervalId = setInterval(fetchChart, 5000); // ⏱ Refresh every 5 seconds
+    const intervalId = setInterval(fetchChart, 10000);
     return () => clearInterval(intervalId);
   }, [symbol, market, range, interval]);
 
@@ -67,7 +85,7 @@ export default function App() {
         timeVisible: true,
         tickMarkFormatter: (time, type, locale) => {
           const date = new Date(time * 1000);
-          if (interval === "1m" || interval === "5m" || interval === "15m") {
+          if (["1m", "5m", "15m"].includes(interval)) {
             return date.toLocaleTimeString(locale, {
               hour: "2-digit",
               minute: "2-digit",
@@ -84,12 +102,10 @@ export default function App() {
     candleSeries.current = chartInstance.current.addCandlestickSeries();
     candleSeries.current.setData(chartData);
 
-    // SMA
     if (showSMA) {
       const sma = chartData.map((d, i, arr) => {
-        const start = Math.max(0, i - 9);
-        const slice = arr.slice(start, i + 1);
-        const avg = slice.reduce((a, c) => a + c.close, 0) / slice.length;
+        const slice = arr.slice(Math.max(0, i - 9), i + 1);
+        const avg = slice.reduce((sum, p) => sum + p.close, 0) / slice.length;
         return { time: d.time, value: +avg.toFixed(2) };
       });
       smaSeries.current = chartInstance.current.addLineSeries({
@@ -99,7 +115,6 @@ export default function App() {
       smaSeries.current.setData(sma);
     }
 
-    // EMA
     if (showEMA) {
       const ema = [];
       const k = 2 / (10 + 1);
@@ -118,7 +133,15 @@ export default function App() {
   }, [chartData, showSMA, showEMA, interval]);
 
   return (
-    <div style={{ padding: "20px", fontFamily: "Arial", color: "white", backgroundColor: "#111", minHeight: "100vh" }}>
+    <div
+      style={{
+        padding: "20px",
+        fontFamily: "Arial",
+        color: "white",
+        backgroundColor: "#111",
+        minHeight: "100vh",
+      }}
+    >
       <h1 style={{ color: "#66f" }}>Elytrix Market Viewer</h1>
 
       <div style={{ marginBottom: "10px" }}>
@@ -136,21 +159,18 @@ export default function App() {
 
       <div style={{ marginBottom: "10px" }}>
         <select value={range} onChange={(e) => setRange(e.target.value)}>
-          <option value="1d">1d</option>
-          <option value="5d">5d</option>
-          <option value="1mo">1mo</option>
-          <option value="3mo">3mo</option>
-          <option value="6mo">6mo</option>
-          <option value="1y">1y</option>
-          <option value="5y">5y</option>
-          <option value="max">max</option>
+          {Object.keys(allowedIntervals).map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
         </select>
         <select value={interval} onChange={(e) => setIntervalValue(e.target.value)}>
-          <option value="1m">1m</option>
-          <option value="5m">5m</option>
-          <option value="15m">15m</option>
-          <option value="1d">1d</option>
-          <option value="1wk">1wk</option>
+          {allowedIntervals[range].map((i) => (
+            <option key={i} value={i}>
+              {i}
+            </option>
+          ))}
         </select>
         <label>
           <input type="checkbox" checked={showSMA} onChange={() => setShowSMA(!showSMA)} /> SMA
@@ -160,7 +180,11 @@ export default function App() {
         </label>
       </div>
 
-      {price && <h3>{symbol} = ${price.toFixed(2)}</h3>}
+      {price && (
+        <h3>
+          {symbol} = ${price.toFixed(2)}
+        </h3>
+      )}
       <div ref={chartRef} />
     </div>
   );
