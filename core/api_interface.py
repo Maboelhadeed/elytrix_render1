@@ -1,11 +1,12 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from typing import List, Optional
 import yfinance as yf
-import httpx
 from datetime import datetime, timedelta
 
 app = FastAPI()
 
+# Allow all origins for now – you can restrict to Vercel domain later
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,60 +15,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Your Alpaca keys (inserted back as provided)
-ALPACA_API_KEY = "AKK343CVU61TVJJB6CBP"
-ALPACA_SECRET_KEY = "JbuxU7Xb2I5doAd58oetqkJyVBxDu2BYa8bHkRKF"
+@app.get("/")
+def home():
+    return {"status": "Elytrix API running."}
+
 
 @app.get("/live_price")
-async def get_live_price(symbol: str, market: str = "stock"):
-    end = datetime.utcnow()
-    start = end - timedelta(days=2)
+def get_live_price(symbol: str = Query(...), market: str = Query("stock")):
+    try:
+        if market.lower() == "crypto":
+            yf_symbol = symbol.upper() + "-USD"
+        else:
+            yf_symbol = symbol.upper()
 
-    if market == "crypto":
-        data = yf.download(f"{symbol}-USD", start=start, end=end, interval="1h")
-        if data.empty:
-            return {"error": "Crypto data not found."}
-        chart = [
+        ticker = yf.Ticker(yf_symbol)
+
+        hist = ticker.history(period="1d", interval="5m")
+        if hist.empty:
+            return {"error": f"No data found for {symbol} from Yahoo Finance."}
+
+        current_price = round(hist["Close"].iloc[-1], 2)
+
+        chart_data = [
             {
-                "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "open": row["Open"],
-                "high": row["High"],
-                "low": row["Low"],
-                "close": row["Close"],
+                "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "price": round(price, 2)
             }
-            for ts, row in data.iterrows()
+            for dt, price in zip(hist.index, hist["Close"])
         ]
-        return {"symbol": symbol, "price": float(data['Close'][-1]), "chart": chart}
 
-    else:
-        headers = {
-            "APCA-API-KEY-ID": AKK343CVU61TVJJB6CBP,
-            "APCA-API-SECRET-KEY": JbuxU7Xb2I5doAd58oetqkJyVBxDu2BYa8bHkRKF,
+        return {
+            "symbol": symbol.upper(),
+            "price": current_price,
+            "chart": chart_data
         }
-        async with httpx.AsyncClient() as client:
-            url = f"https://data.alpaca.markets/v2/stocks/{symbol}/bars"
-            params = {
-                "timeframe": "1Hour",
-                "start": start.isoformat() + "Z",
-                "end": end.isoformat() + "Z",
-                "limit": 100
-            }
-            response = await client.get(url, headers=headers, params=params)
-            if response.status_code != 200:
-                return {"error": "Stock data not found from Alpaca."}
-            data = response.json()
-            bars = data.get("bars", [])
-            if not bars:
-                return {"error": "No bars returned."}
 
-            chart = [
-                {
-                    "timestamp": bar["t"],
-                    "open": bar["o"],
-                    "high": bar["h"],
-                    "low": bar["l"],
-                    "close": bar["c"],
-                }
-                for bar in bars
-            ]
-            return {"symbol": symbol, "price": bars[-1]["c"], "chart": chart}
+    except Exception as e:
+        return {"error": f"Failed to fetch data for {symbol}: {str(e)}"}
