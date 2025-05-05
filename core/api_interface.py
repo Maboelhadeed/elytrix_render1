@@ -1,63 +1,53 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all for now
+    allow_origins=["*"],  # You can replace with your Vercel domain for security
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/")
-def home():
-    return {"status": "Elytrix backend running"}
-
 @app.get("/live_price")
-def live_price(
+def get_price(
     symbol: str = Query(...),
     market: str = Query("stock"),
-    interval: str = Query("5m"),
-    range: str = Query("1d")
+    range: str = Query("1d"),
+    interval: str = Query("1m")
 ):
-    try:
-        # Format symbol for Yahoo Finance
-        if market == "crypto":
-            yf_symbol = f"{symbol.upper()}-USD"
-        elif market == "forex":
-            yf_symbol = f"{symbol.upper()}=X"
-        else:
-            yf_symbol = symbol.upper()
+    yf_symbol = symbol.upper()
+    if market == "crypto":
+        yf_symbol = f"{yf_symbol}-USD"
 
-        # Fetch historical data
+    try:
         ticker = yf.Ticker(yf_symbol)
-        hist = ticker.history(interval=interval, period=range)
+        hist = ticker.history(period=range, interval=interval)
 
         if hist.empty:
-            return {"error": f"No data found for {symbol} ({yf_symbol})"}
+            return {"error": "No data available for this symbol."}
 
-        last_price = round(hist["Close"].iloc[-1], 2)
-
-        # Prepare chart data
-        chart_data = [
+        last_price = hist["Close"].iloc[-1]
+        chart = [
             {
-                "timestamp": i.isoformat(),
-                "open": round(row["Open"], 2),
-                "high": round(row["High"], 2),
-                "low": round(row["Low"], 2),
-                "close": round(row["Close"], 2),
+                "timestamp": timestamp.strftime("%Y-%m-%dT%H:%M:%S"),
+                "open": float(row["Open"]),
+                "high": float(row["High"]),
+                "low": float(row["Low"]),
+                "close": float(row["Close"]),
             }
-            for i, row in hist.iterrows()
+            for timestamp, row in hist.iterrows()
         ]
 
         return {
             "symbol": symbol.upper(),
-            "price": last_price,
-            "chart": chart_data
+            "price": float(last_price),
+            "chart": chart,
         }
 
     except Exception as e:
